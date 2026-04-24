@@ -1,5 +1,7 @@
 package com.boxdispatch.Config;
 
+import com.boxdispatch.Exceptions.UserNotFoundException;
+import com.boxdispatch.Repositories.UsersRepository;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.SerializationFeature;
 import com.fasterxml.jackson.datatype.jsr310.JavaTimeModule;
@@ -16,15 +18,15 @@ import org.springframework.security.crypto.password.PasswordEncoder;
 @Configuration
 public class ApplicationConfiguration {
 
-    private final AdminUserRepository adminUserRepository;
+    private final UsersRepository usersRepository;
 
-    public ApplicationConfiguration(AdminUserRepository adminUserRepository) {
-        this.adminUserRepository = adminUserRepository;
+    public ApplicationConfiguration(UsersRepository usersRepository) {
+        this.usersRepository = usersRepository;
     }
 
     @Bean
     public UserDetailsService userDetailsService() {
-        return username -> adminUserRepository.findByUsername(username)
+        return username -> usersRepository.findByUsername(username)
                 .orElseThrow(() -> new UserNotFoundException("User not found."));
     }
 
