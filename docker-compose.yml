@@ -1,9 +1,10 @@
 version: "3.9"
 
-#
+# ─────────────────────────────────────────────────────────────────────────────
 #  Box Dispatch System — Full Observability Stack
 #  Services: App · PostgreSQL · Redis · Prometheus · Grafana · Loki · Promtail
-#
+# ─────────────────────────────────────────────────────────────────────────────
+
 networks:
   box-net:
     driver: bridge
@@ -16,6 +17,8 @@ volumes:
   loki-data:
 
 services:
+
+  # ── Application ─────────────────────────────────────────────────────────────
   app:
     build:
       context: .

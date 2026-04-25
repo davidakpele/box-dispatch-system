@@ -1,0 +1,133 @@
+{
+  "uid": "box-dispatch-jvm",
+  "title": "Box Dispatch System — JVM Deep Dive",
+  "tags": ["box-dispatch", "jvm"],
+  "timezone": "browser",
+  "schemaVersion": 38,
+  "version": 1,
+  "refresh": "15s",
+  "time": { "from": "now-1h", "to": "now" },
+
+  "panels": [
+
+    {
+      "id": 1,
+      "title": "Heap Used %",
+      "type": "gauge",
+      "gridPos": { "x": 0, "y": 0, "w": 6, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-uid" },
+      "targets": [{
+        "expr": "jvm_memory_used_bytes{job=\"box-dispatch-app\",area=\"heap\"} / jvm_memory_max_bytes{job=\"box-dispatch-app\",area=\"heap\"} * 100"
+      }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percent", "min": 0, "max": 100,
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 70 }, { "color": "red", "value": 85 }] }
+        }
+      }
+    },
+
+    {
+      "id": 2,
+      "title": "Non-Heap Used",
+      "type": "stat",
+      "gridPos": { "x": 6, "y": 0, "w": 6, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-uid" },
+      "targets": [{ "expr": "jvm_memory_used_bytes{job=\"box-dispatch-app\",area=\"nonheap\"}", "legendFormat": "Non-Heap" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+
+    {
+      "id": 3,
+      "title": "Live Threads",
+      "type": "stat",
+      "gridPos": { "x": 12, "y": 0, "w": 6, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-uid" },
+      "targets": [{ "expr": "jvm_threads_live_threads{job=\"box-dispatch-app\"}", "legendFormat": "Live Threads" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": {
+        "defaults": {
+          "thresholds": { "steps": [{ "color": "green", "value": null }, { "color": "yellow", "value": 100 }, { "color": "red", "value": 200 }] }
+        }
+      }
+    },
+
+    {
+      "id": 4,
+      "title": "Loaded Classes",
+      "type": "stat",
+      "gridPos": { "x": 18, "y": 0, "w": 6, "h": 6 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-uid" },
+      "targets": [{ "expr": "jvm_classes_loaded_classes{job=\"box-dispatch-app\"}", "legendFormat": "Classes" }],
+      "options": { "reduceOptions": { "calcs": ["lastNotNull"] } },
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    },
+
+    {
+      "id": 5,
+      "title": "Memory Pools",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 6, "w": 24, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-uid" },
+      "targets": [{
+        "expr": "jvm_memory_used_bytes{job=\"box-dispatch-app\"}",
+        "legendFormat": "{{id}} ({{area}})"
+      }],
+      "fieldConfig": { "defaults": { "unit": "bytes" } }
+    },
+
+    {
+      "id": 6,
+      "title": "GC Pause Duration by Cause",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 14, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-uid" },
+      "targets": [{
+        "expr": "sum(rate(jvm_gc_pause_seconds_sum{job=\"box-dispatch-app\"}[1m])) by (cause)",
+        "legendFormat": "{{cause}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "s" } }
+    },
+
+    {
+      "id": 7,
+      "title": "GC Collections per Minute",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 14, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-uid" },
+      "targets": [{
+        "expr": "sum(rate(jvm_gc_pause_seconds_count{job=\"box-dispatch-app\"}[1m])) by (gc)",
+        "legendFormat": "{{gc}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "ops" } }
+    },
+
+    {
+      "id": 8,
+      "title": "CPU Usage",
+      "type": "timeseries",
+      "gridPos": { "x": 0, "y": 22, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-uid" },
+      "targets": [
+        { "expr": "process_cpu_usage{job=\"box-dispatch-app\"}", "legendFormat": "Process CPU" },
+        { "expr": "system_cpu_usage{job=\"box-dispatch-app\"}", "legendFormat": "System CPU" }
+      ],
+      "fieldConfig": { "defaults": { "unit": "percentunit", "min": 0, "max": 1 } }
+    },
+
+    {
+      "id": 9,
+      "title": "Thread States",
+      "type": "timeseries",
+      "gridPos": { "x": 12, "y": 22, "w": 12, "h": 8 },
+      "datasource": { "type": "prometheus", "uid": "prometheus-uid" },
+      "targets": [{
+        "expr": "jvm_threads_states_threads{job=\"box-dispatch-app\"}",
+        "legendFormat": "{{state}}"
+      }],
+      "fieldConfig": { "defaults": { "unit": "short" } }
+    }
+  ]
+}

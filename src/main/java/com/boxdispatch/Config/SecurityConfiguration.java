@@ -135,8 +135,8 @@ public class SecurityConfiguration {
             .addFilterBefore(jwtAuthFilter,                   UsernamePasswordAuthenticationFilter.class)
 
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/api/auth/**", "/auth/**", "/error/**").permitAll()
                 .requestMatchers("/", "/login", "/register", "/dashboard").permitAll()
+                .requestMatchers("/api/auth/**", "/auth/**", "/error/**").permitAll()   
                 .requestMatchers("/actuator/prometheus", "/actuator/health").permitAll()
                 .requestMatchers(
                     "/swagger-ui.html", "/swagger-ui/**",

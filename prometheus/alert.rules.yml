@@ -1,0 +1,92 @@
+groups:
+  - name: box-dispatch-app
+    rules:
+
+      - alert: AppDown
+        expr: up{job="box-dispatch-app"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Box Dispatch App is DOWN"
+          description: "The application has been unreachable for more than 1 minute."
+
+      - alert: HighErrorRate
+        expr: |
+          sum(rate(http_server_requests_seconds_count{job="box-dispatch-app", status=~"5.."}[5m]))
+          /
+          sum(rate(http_server_requests_seconds_count{job="box-dispatch-app"}[5m])) > 0.05
+        for: 2m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High HTTP 5xx error rate"
+          description: "More than 5% of requests are returning 5xx errors."
+
+      - alert: HighResponseTime
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_server_requests_seconds_bucket{job="box-dispatch-app"}[5m])) by (le, uri)
+          ) > 2
+        for: 3m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High p95 response time (>2s)"
+          description: "95th percentile latency exceeds 2 seconds on {{ $labels.uri }}."
+
+      - alert: HighJvmHeapUsage
+        expr: |
+          (jvm_memory_used_bytes{job="box-dispatch-app", area="heap"}
+          / jvm_memory_max_bytes{job="box-dispatch-app", area="heap"}) > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "JVM heap usage above 85%"
+          description: "Heap usage is {{ $value | humanizePercentage }}."
+
+      - alert: HighThreadCount
+        expr: jvm_threads_live_threads{job="box-dispatch-app"} > 200
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "High JVM thread count (>200)"
+          description: "Current live threads: {{ $value }}."
+  - name: postgres
+    rules:
+
+      - alert: PostgresDown
+        expr: up{job="postgres"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "PostgreSQL is DOWN"
+
+      - alert: HighDbConnections
+        expr: pg_stat_activity_count{job="postgres"} > 80
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "PostgreSQL connection count high (>80)"
+  - name: redis
+    rules:
+
+      - alert: RedisDown
+        expr: up{job="redis"} == 0
+        for: 1m
+        labels:
+          severity: critical
+        annotations:
+          summary: "Redis is DOWN"
+
+      - alert: RedisHighMemory
+        expr: redis_memory_used_bytes / redis_memory_max_bytes > 0.85
+        for: 5m
+        labels:
+          severity: warning
+        annotations:
+          summary: "Redis memory usage above 85%"
