@@ -82,7 +82,7 @@ public class BoxService implements IBoxService {
         if (box.getBatteryCapacity() < MIN_BATTERY_FOR_LOADING)
             throw BusinessRuleViolationException.lowBattery(box.getBatteryCapacity());
 
-        if (!box.getState().canTransitionTo(BoxState.LOADING))
+        if (!box.getState().isLoadable())
             throw BusinessRuleViolationException.invalidStateTransition(box.getState(), BoxState.LOADING);
 
         List<String> requestCodes = request.getItems().stream().map(ItemRequest::getCode).toList();
