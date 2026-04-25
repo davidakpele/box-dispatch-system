@@ -621,7 +621,6 @@ The project has three layers of tests covering unit, controller, and integration
 | File | Type | Description |
 |---|---|---|
 | `BoxServiceTest` | Unit (Mockito) | Service logic with all dependencies mocked |
-| `BoxControllerTest` | Controller (MockMvc) | HTTP layer, request validation, auth enforcement |
 | `BoxServiceIntegrationTest` | Integration (H2) | Full service + real DB with H2 in-memory |
 
 ### Test configuration
@@ -657,10 +656,13 @@ mvn test
 
 ```bash
 mvn test -Dtest=BoxServiceTest
-mvn test -Dtest=BoxControllerTest
 mvn test -Dtest=BoxServiceIntegrationTest
 ```
 
+### Run App using Docker
+```docker
+docker compose up --build -d
+```
 ### Test coverage summary
 
 **Unit Tests (`BoxServiceTest`) — 17 tests**
