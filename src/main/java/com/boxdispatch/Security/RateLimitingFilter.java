@@ -7,122 +7,104 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
-import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
-import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
+
 import java.io.IOException;
 import java.time.Duration;
 import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
+/**
+ * Per-client rate limiting using token-bucket algorithm.
+ *
+ * Resolution: prefer X-Forwarded-For (set by real reverse proxies and the host
+ * machine when traffic enters from outside the Docker network). Fall back to
+ * RemoteAddr only when no forwarded header exists — which is fine for true
+ * inter-container calls (e.g. health checks, internal service calls).
+ *
+ * Rate limits (matches README):
+ *   POST /api/auth/login     →  5 req/min  (burst 10)
+ *   POST /api/auth/register  →  3 req/hour
+ *   everything else          → 100 req/min
+ */
 @Component
-@Order(2)
 public class RateLimitingFilter extends OncePerRequestFilter {
-    
-    private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
-    
-    private static final int LOGIN_RATE_LIMIT = 5; 
-    private static final int LOGIN_BURST_LIMIT = 10; 
-    private static final int REGISTER_RATE_LIMIT = 3;
-    private static final int GENERAL_RATE_LIMIT = 100;
-    
-    
-    private Bucket createLoginBucket() {
-        return Bucket.builder()
-            .addLimit(Bandwidth.classic(LOGIN_BURST_LIMIT, 
-                Refill.intervally(LOGIN_RATE_LIMIT, Duration.ofMinutes(1))))
-            .build();
-    }
-    
-    private Bucket createRegisterBucket() {
-        return Bucket.builder()
-            .addLimit(Bandwidth.classic(REGISTER_RATE_LIMIT, 
-                Refill.intervally(REGISTER_RATE_LIMIT, Duration.ofHours(1))))
-            .build();
-    }
-    
-    private Bucket createGeneralBucket() {
-        return Bucket.builder()
-            .addLimit(Bandwidth.classic(GENERAL_RATE_LIMIT, 
-                Refill.intervally(GENERAL_RATE_LIMIT, Duration.ofMinutes(1))))
-            .build();
-    }
-    
-    @Override
-    protected void doFilterInternal(HttpServletRequest request, 
-                                   HttpServletResponse response, 
-                                   FilterChain filterChain) throws ServletException, IOException {
-        
-        String clientIp = getClientIp(request);
-        String path = request.getRequestURI();
-        String method = request.getMethod();
 
-        Bucket bucket;
-        String bucketKey;
-        
-        if (path.contains("/api/auth/login") && "POST".equals(method)) {
-            bucketKey = clientIp + "_login";
-            bucket = buckets.computeIfAbsent(bucketKey, k -> createLoginBucket());
-        } else if (path.contains("/api/auth/register") && "POST".equals(method)) {
-            bucketKey = clientIp + "_register";
-            bucket = buckets.computeIfAbsent(bucketKey, k -> createRegisterBucket());
-        } else {
-            bucketKey = clientIp + "_general";
-            bucket = buckets.computeIfAbsent(bucketKey, k -> createGeneralBucket());
-        }
-        
+    // key = "<ip>:<tier>"  →  bucket
+    private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
+
+    @Override
+    protected void doFilterInternal(HttpServletRequest request,
+                                    HttpServletResponse response,
+                                    FilterChain filterChain)
+            throws ServletException, IOException {
+
+        String clientIp  = resolveClientIp(request);
+        String path      = request.getServletPath();
+        String method    = request.getMethod();
+        String bucketKey = clientIp + ":" + tier(method, path);
+
+        Bucket bucket = buckets.computeIfAbsent(bucketKey, k -> buildBucket(method, path));
+
         if (bucket.tryConsume(1)) {
-            addRateLimitHeaders(response, bucket);
+            response.setHeader("X-Rate-Limit-Remaining",
+                    String.valueOf(bucket.getAvailableTokens()));
             filterChain.doFilter(request, response);
         } else {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
-            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.setContentType("application/json");
-            response.setHeader("Retry-After", getRetryAfterTime(path));
-            response.getWriter().write(getRateLimitExceededMessage(path));
+            response.setCharacterEncoding("UTF-8");
+            response.getWriter().write(
+                "{\"success\":false," +
+                "\"message\":\"Too many requests — please slow down and try again shortly.\"," +
+                "\"status\":429}"
+            );
         }
     }
-    
-    private void addRateLimitHeaders(HttpServletResponse response, Bucket bucket) {
-        response.setHeader("X-Rate-Limit-Remaining", 
-            String.valueOf(bucket.getAvailableTokens()));
-    
-        if (response.containsHeader("X-Rate-Limit-Limit")) {
-            response.setHeader("X-Rate-Limit-Limit", String.valueOf(LOGIN_RATE_LIMIT));
+
+    /**
+     * Priority:
+     *   1. X-Forwarded-For first value (set by nginx, AWS ALB, or the Docker host)
+     *   2. X-Real-IP (nginx convention)
+     *   3. RemoteAddr (fallback — will be the Docker gateway inside a bridge network)
+     */
+    private String resolveClientIp(HttpServletRequest request) {
+        String xff = request.getHeader("X-Forwarded-For");
+        if (xff != null && !xff.isBlank()) {
+            return xff.split(",")[0].trim();
         }
-    }
-    
-    private String getRetryAfterTime(String path) {
-        if (path.contains("/api/auth/register")) {
-            return "3600";
-        } else if (path.contains("/api/auth/login")) {
-            return "60"; 
+        String xri = request.getHeader("X-Real-IP");
+        if (xri != null && !xri.isBlank()) {
+            return xri.trim();
         }
-        return "60";
+        return request.getRemoteAddr();
     }
-    
-    private String getRateLimitExceededMessage(String path) {
-        String endpoint = path.contains("/register") ? "registration" : 
-                         path.contains("/login") ? "login" : "requests";
-        
-        return String.format(
-            "{\"error\":\"Too many %s attempts. Please try again later.\"," +
-            "\"code\":\"RATE_LIMIT_EXCEEDED\"}", endpoint);
-    }
-    
-    private String getClientIp(HttpServletRequest request) {
-        String xfHeader = request.getHeader("X-Forwarded-For");
-        if (xfHeader == null) {
-            return request.getRemoteAddr();
+
+    private String tier(String method, String path) {
+        if ("POST".equalsIgnoreCase(method)) {
+            if (path.equals("/api/auth/login"))    return "login";
+            if (path.equals("/api/auth/register")) return "register";
         }
-        return xfHeader.split(",")[0];
+        return "default";
     }
-    
-    @Override
-    protected boolean shouldNotFilter(HttpServletRequest request) {
-        String path = request.getServletPath();
-        return path.contains("/public") || path.contains("/health");
+
+    private Bucket buildBucket(String method, String path) {
+        String t = tier(method, path);
+        return switch (t) {
+            // 5 tokens/min, burst up to 10
+            case "login"    -> Bucket.builder()
+                    .addLimit(Bandwidth.classic(10, Refill.intervally(5,  Duration.ofMinutes(1))))
+                    .build();
+            // 3 tokens/hour
+            case "register" -> Bucket.builder()
+                    .addLimit(Bandwidth.classic(3,  Refill.intervally(3,  Duration.ofHours(1))))
+                    .build();
+            // 100 tokens/min
+            default         -> Bucket.builder()
+                    .addLimit(Bandwidth.classic(100, Refill.intervally(100, Duration.ofMinutes(1))))
+                    .build();
+        };
     }
 }

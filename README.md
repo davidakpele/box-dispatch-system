@@ -1,6 +1,6 @@
 # Box Dispatch System
 
-A REST API service for managing dispatch boxes used to deliver small items to remote locations. Built with Java 17 and Spring Boot, with a Thymeleaf frontend for authentication and API interaction.
+A REST API service for managing dispatch boxes used to deliver small items to remote locations. Built with Java 21 and Spring Boot 4, with a Thymeleaf frontend for authentication and API interaction.
 
 ---
 
@@ -11,11 +11,13 @@ A REST API service for managing dispatch boxes used to deliver small items to re
 - [Prerequisites](#prerequisites)
 - [Configuration](#configuration)
 - [Build & Run](#build--run)
+- [Docker & Observability Stack](#docker--observability-stack)
 - [Seeded Data](#seeded-data)
 - [Frontend](#frontend)
 - [API Endpoints](#api-endpoints)
 - [Authentication](#authentication)
 - [Additional Features](#additional-features)
+- [Monitoring & Grafana](#monitoring--grafana)
 - [Testing](#testing)
 
 ---
@@ -50,24 +52,36 @@ IDLE → LOADING → LOADED → DELIVERING → DELIVERED → RETURNING → IDLE
 
 | Layer | Technology |
 |---|---|
-| Language | Java 17 |
-| Framework | Spring Boot 3 |
+| Language | Java 21 |
+| Framework | Spring Boot 4 |
 | Frontend | Thymeleaf |
-| Database | PostgreSQL |
-| Cache / Idempotency | Redis (Lettuce) |
+| Database | PostgreSQL 16 |
+| Cache / Idempotency | Redis 7 (Lettuce) |
 | Security | Spring Security + JWT (JJWT / Nimbus) |
 | ORM | Spring Data JPA / Hibernate |
 | API Docs | SpringDoc OpenAPI (Swagger UI) |
 | Build Tool | Maven |
+| Metrics | Micrometer + Prometheus |
+| Dashboards | Grafana 10 |
+| Log Aggregation | Loki + Promtail |
 
 ---
 
 ## Prerequisites
 
-- Java 17+
+### Running locally (without Docker)
+
+- Java 21+
 - Maven 3.8+
 - PostgreSQL 14+ running on `localhost:5432`
 - Redis running on `localhost:6379`
+
+### Running with Docker (recommended)
+
+- Docker Engine 24+
+- Docker Compose v2 (`docker compose`, not `docker-compose`)
+
+No local JDK, PostgreSQL, or Redis installation needed — everything runs inside containers.
 
 ---
 
@@ -75,7 +89,7 @@ IDLE → LOADING → LOADED → DELIVERING → DELIVERED → RETURNING → IDLE
 
 All configuration lives in `src/main/resources/application.yml`.
 
-Key values to update before running:
+Key values to update before running locally:
 
 ```yaml
 spring:
@@ -98,7 +112,7 @@ app:
     expiration-minutes: 1440
 ```
 
-Create the database before running:
+Create the database before running locally:
 
 ```sql
 CREATE DATABASE boxdispatch;
@@ -106,17 +120,21 @@ CREATE DATABASE boxdispatch;
 
 The schema is managed by Hibernate (`ddl-auto: update`) and is created automatically on first run.
 
+When running via Docker Compose, all environment variables are injected automatically from the `.env` file — no manual edits to `application.yml` are needed.
+
 ---
 
 ## Build & Run
 
-### Build
+### Local (without Docker)
+
+**Build:**
 
 ```bash
 mvn clean package -DskipTests
 ```
 
-### Run
+**Run:**
 
 ```bash
 java -jar target/box-dispatch-system-*.jar
@@ -129,6 +147,75 @@ mvn spring-boot:run
 ```
 
 The application starts on `http://localhost:8000`.
+
+---
+
+## Docker & Observability Stack
+
+The project ships with a full Docker Compose stack that runs the application alongside PostgreSQL, Redis, and the complete Grafana observability suite (Prometheus, Loki, Promtail, and exporters).
+
+### Services
+
+| Service | Image | Port | Purpose |
+|---|---|---|---|
+| **app** | built from `Dockerfile` | 8000 | Spring Boot REST API |
+| **postgres** | `postgres:16-alpine` | 5432 | Primary database |
+| **redis** | `redis:7-alpine` | 6379 | Idempotency & session cache |
+| **prometheus** | `prom/prometheus:v2.51.2` | 9090 | Metrics scraper & time-series DB |
+| **grafana** | `grafana/grafana:10.4.2` | 3000 | Dashboards & visualisation |
+| **loki** | `grafana/loki:2.9.7` | 3100 | Log aggregation backend |
+| **promtail** | `grafana/promtail:2.9.7` | — | Log shipper: Docker → Loki |
+| **postgres-exporter** | `prometheuscommunity/postgres-exporter:v0.15.0` | 9187 | PostgreSQL metrics for Prometheus |
+| **redis-exporter** | `oliver006/redis_exporter:v1.60.0` | 9121 | Redis metrics for Prometheus |
+
+### Quick start
+
+```bash
+# 1. Copy the environment file and adjust passwords if needed
+cp .env.example .env
+
+# 2. Start everything (builds the app image on first run)
+make up
+# or: docker compose up -d --build
+```
+
+Wait approximately 30 seconds for the app to pass its health check, then open:
+
+| URL | What |
+|---|---|
+| `http://localhost:8000` | Application (landing page) |
+| `http://localhost:8000/docs` | Swagger UI |
+| `http://localhost:3000` | Grafana (admin / admin) |
+| `http://localhost:9090` | Prometheus |
+
+### Useful Make commands
+
+```bash
+make up            # Start the full stack (build if needed)
+make down          # Stop all services
+make clean         # Stop and remove all data volumes (full reset)
+make logs          # Follow logs from all services
+make logs-app      # Follow application logs only
+make restart-app   # Restart only the app container
+make ps            # Show container health status
+make reload-prometheus  # Reload Prometheus config without restart
+```
+
+### Dockerfile
+
+The app uses a multi-stage build for a lean production image:
+
+- **Stage 1** — Maven build with dependency caching (Eclipse Temurin 21 JDK)
+- **Stage 2** — Layered JAR runtime (Eclipse Temurin 21 JRE Alpine), runs as a non-root user
+
+JVM tuning applied at runtime:
+
+```
+-XX:+UseContainerSupport
+-XX:MaxRAMPercentage=75.0
+-XX:+UseG1GC
+-XX:+HeapDumpOnOutOfMemoryError
+```
 
 ---
 
@@ -322,6 +409,14 @@ The API uses JWT Bearer token authentication.
 POST /api/auth/register
 ```
 
+Request body:
+```json
+{
+  "email": "user@example.com",
+  "password": "password"
+}
+```
+
 ### Login
 
 ```
@@ -362,7 +457,7 @@ http://localhost:8000/v3/api-docs
 
 ### Rate Limiting
 
-Per-IP rate limiting is enforced on all endpoints:
+Per-IP rate limiting is enforced on all endpoints. When running behind Docker, the filter correctly resolves the real client IP from the `X-Forwarded-For` header to avoid all users sharing the same Docker gateway IP.
 
 | Endpoint | Limit |
 |---|---|
@@ -380,16 +475,12 @@ The following security filters run on every request in order:
 | `BotDetectionFilter` | Blocks known scanner and bot `User-Agent` strings |
 | `InputValidationFilter` | Rejects path traversal, SQL injection, and XSS patterns in URLs |
 | `SecurityHeadersFilter` | Adds `X-Frame-Options`, `X-XSS-Protection`, `HSTS`, `CSP` headers |
-| `RateLimitingFilter` | Enforces per-IP token-bucket rate limits |
+| `RateLimitingFilter` | Enforces per-IP token-bucket rate limits (Docker-aware) |
 | `JwtAuthenticationFilter` | Validates and parses JWT Bearer tokens |
 
 ### HTTP Firewall
 
-Spring's `StrictHttpFirewall` is configured to block:
-- Backslashes and URL-encoded slashes
-- Semicolons and percent-encoded characters
-- Double slashes (`//`)
-- Null bytes and line feed characters
+Spring's `StrictHttpFirewall` is configured to block backslashes and URL-encoded slashes, semicolons and percent-encoded characters, double slashes (`//`), and null bytes and line feed characters. The hostname validator also accepts Docker internal service names (e.g. `app`, `postgres`) so the firewall does not reject inter-container health checks.
 
 ### Request Logging
 
@@ -397,11 +488,135 @@ Every request is logged with a unique `requestId`, method, path, IP address, res
 
 ---
 
+## Monitoring & Grafana
+
+The Docker Compose stack ships a complete observability pipeline wired automatically on first run. No manual configuration is needed.
+
+### Metrics pipeline
+
+The application exposes Micrometer metrics at `/actuator/prometheus`. Prometheus scrapes this endpoint every 10 seconds and stores the time-series data. Grafana reads from Prometheus to render dashboards.
+
+### Log pipeline
+
+Promtail watches the Docker daemon socket and tails container logs for any container labelled `logging=promtail` (the app container is pre-labelled). Log entries are parsed against the Spring Boot console pattern, labelled by `level`, `logger`, `thread`, and `severity`, then pushed to Loki. Grafana reads from Loki for the live log panels.
+
+### Grafana dashboards
+
+Both dashboards are auto-provisioned and appear immediately under the **Box Dispatch System** folder in Grafana at `http://localhost:3000` (admin / admin).
+
+**Box Dispatch System — Overview**
+
+The primary operations dashboard covering:
+
+| Section | What you see |
+|---|---|
+| At-a-glance | App UP/DOWN status, uptime, request rate, error rate %, p99 latency, JVM heap % |
+| HTTP traffic | Request rate by endpoint and method; 2xx / 4xx / 5xx breakdown over time |
+| Latency | p50 / p90 / p95 / p99 response time percentiles |
+| Connections | Active and keep-alive Tomcat connections |
+| JVM memory | Heap used vs max, non-heap, GC pause time by cause |
+| HikariCP | Active / idle / pending / max pool connections; p95 acquisition time |
+| PostgreSQL | Active connections, commits/s, rollbacks/s, cache hit ratio |
+| Redis | Memory used vs max, commands/s, key hit/miss ratio |
+| Application logs | Live ERROR and WARN log stream from Loki |
+
+**Box Dispatch System — JVM Deep Dive**
+
+A detailed panel for diagnosing memory pressure or GC issues, covering all JVM memory pools, GC collections per minute, thread states, and CPU usage.
+
+### Alerting rules
+
+Prometheus evaluates the following alert rules every 15 seconds:
+
+| Alert | Condition | Severity |
+|---|---|---|
+| `AppDown` | App unreachable for > 1 minute | critical |
+| `HighErrorRate` | > 5% 5xx rate over 5 minutes | warning |
+| `HighResponseTime` | p95 latency > 2s for 3 minutes | warning |
+| `HighJvmHeapUsage` | Heap usage > 85% for 5 minutes | warning |
+| `HighThreadCount` | Live threads > 200 for 5 minutes | warning |
+| `PostgresDown` | Exporter unreachable for 1 minute | critical |
+| `HighDbConnections` | > 80 active connections for 5 minutes | warning |
+| `RedisDown` | Exporter unreachable for 1 minute | critical |
+| `RedisHighMemory` | Redis memory > 85% of max for 5 minutes | warning |
+
+Alerts are visible in Grafana under **Alerting → Alert rules** and in the Prometheus UI at `http://localhost:9090/alerts`.
+
+### Data retention
+
+| Store | Default |
+|---|---|
+| Prometheus TSDB | 15 days |
+| Loki chunks | 7 days |
+| PostgreSQL | Persistent volume (no expiry) |
+| Redis | Persistent volume + LRU eviction at 256 MB |
+
+### Querying logs manually
+
+Open **Explore** in Grafana and select the **Loki** datasource. Example LogQL queries:
+
+```logql
+# All application logs
+{app="box-dispatch"}
+
+# Errors only
+{app="box-dispatch", severity="error"}
+
+# Logs mentioning a specific box
+{app="box-dispatch"} |= "BOX-001"
+
+# Rate of error logs per minute
+rate({app="box-dispatch", severity="error"}[1m])
+```
+
+### Observability file structure
+
+```
+.
+├── docker-compose.yml
+├── Dockerfile
+├── .env.example
+├── Makefile
+├── init-db.sql
+│
+├── prometheus/
+│   ├── prometheus.yml          # Scrape targets (app, postgres, redis, self)
+│   └── alert.rules.yml         # 9 alerting rules
+│
+├── grafana/
+│   ├── provisioning/
+│   │   ├── datasources/
+│   │   │   └── datasources.yml # Prometheus + Loki auto-wired
+│   │   └── dashboards/
+│   │       └── dashboards.yml  # Folder config
+│   └── dashboards/
+│       ├── box-dispatch-overview.json
+│       └── box-dispatch-jvm.json
+│
+├── loki/
+│   └── loki-config.yml         # Storage, retention, schema
+│
+└── promtail/
+    └── promtail-config.yml     # Docker socket scraping + log parsing
+```
+
+### Troubleshooting
+
+**Grafana shows "No data"** — Check Prometheus targets at `http://localhost:9090/targets`. All jobs should show a green "UP" state. If `box-dispatch-app` is down, confirm the app started successfully with `make logs-app`.
+
+**Logs not appearing in Loki** — Promtail needs read access to the Docker socket. On Linux, ensure your user is in the `docker` group (`sudo usermod -aG docker $USER`, then log out and back in). Verify Promtail is running with `make ps`.
+
+**App container exits immediately** — PostgreSQL or Redis may still be starting up. The app has a `depends_on: condition: service_healthy` guard, but on slow machines the 30-second `start_period` may need increasing in `docker-compose.yml`.
+
+**Port conflict** — If any port is already in use on your host, edit the `ports` mapping for that service in `docker-compose.yml` (left side is the host port).
+
+---
+
 ## Testing
 
 The project has three layers of tests covering unit, controller, and integration scenarios.
 
-### Test Structure
+### Test structure
 
 | File | Type | Description |
 |---|---|---|
@@ -409,7 +624,7 @@ The project has three layers of tests covering unit, controller, and integration
 | `BoxControllerTest` | Controller (MockMvc) | HTTP layer, request validation, auth enforcement |
 | `BoxServiceIntegrationTest` | Integration (H2) | Full service + real DB with H2 in-memory |
 
-### Test Configuration
+### Test configuration
 
 Integration tests use a separate profile backed by H2. Place the following file at `src/test/resources/application-test.yml`:
 
@@ -432,13 +647,13 @@ spring:
       - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
 ```
 
-### Run All Tests
+### Run all tests
 
 ```bash
 mvn test
 ```
 
-### Run a Specific Test Class
+### Run a specific test class
 
 ```bash
 mvn test -Dtest=BoxServiceTest
@@ -446,11 +661,11 @@ mvn test -Dtest=BoxControllerTest
 mvn test -Dtest=BoxServiceIntegrationTest
 ```
 
-### Test Coverage Summary
+### Test coverage summary
 
 **Unit Tests (`BoxServiceTest`) — 17 tests**
 
-| Method | Scenarios Covered |
+| Method | Scenarios covered |
 |---|---|
 | `createBox` | Success, duplicate txref, weight > 500g, exactly 500g |
 | `loadItems` | IDLE box, LOADING box, box not found, low battery, invalid state, duplicate codes in request, duplicate code in DB, weight exceeded, idempotent replay, lock released on failure |
@@ -460,7 +675,7 @@ mvn test -Dtest=BoxServiceIntegrationTest
 
 **Controller Tests (`BoxControllerTest`) — 18 tests**
 
-| Endpoint | Scenarios Covered |
+| Endpoint | Scenarios covered |
 |---|---|
 | `POST /api/boxes` | 201 success, missing txref, txref too long, battery out of range, duplicate txref 409, unauthenticated 401 |
 | `POST /api/boxes/{txref}/load` | 201 success, 200 idempotent, 404 not found, 422 low battery, invalid item code, invalid item name, zero weight |
@@ -470,7 +685,7 @@ mvn test -Dtest=BoxServiceIntegrationTest
 
 **Integration Tests (`BoxServiceIntegrationTest`) — 15 tests**
 
-| Area | Scenarios Covered |
+| Area | Scenarios covered |
 |---|---|
 | `createBox` | Persists to DB, rejects duplicate txref |
 | `loadItems` | Persists items, state transitions, remaining capacity, rejects loaded box, low battery, overweight, duplicate code across requests, unknown box |
@@ -478,7 +693,7 @@ mvn test -Dtest=BoxServiceIntegrationTest
 | `getAvailableBoxes` | Filters by state and battery correctly, no eligible boxes |
 | `getBatteryLevel` | Correct value from DB, unknown box |
 
-### Manual Testing
+### Manual testing
 
 Use the dashboard at `http://localhost:8000/dashboard` after logging in, or use curl:
 
@@ -497,7 +712,7 @@ curl -X POST http://localhost:8000/api/auth/login \
 curl http://localhost:8000/api/boxes/available \
   -H "Authorization: Bearer <token>"
 
-# Load items
+# Load items into a box
 curl -X POST http://localhost:8000/api/boxes/BOX-001/load \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \

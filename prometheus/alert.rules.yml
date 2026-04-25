@@ -1,3 +1,4 @@
+# prometheus/alert.rules.yml
 groups:
   - name: box-dispatch-app
     rules:

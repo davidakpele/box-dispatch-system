@@ -1,10 +1,9 @@
 version: "3.9"
 
-# ─────────────────────────────────────────────────────────────────────────────
+# 
 #  Box Dispatch System — Full Observability Stack
 #  Services: App · PostgreSQL · Redis · Prometheus · Grafana · Loki · Promtail
-# ─────────────────────────────────────────────────────────────────────────────
-
+# 
 networks:
   box-net:
     driver: bridge
@@ -18,7 +17,6 @@ volumes:
 
 services:
 
-  # ── Application ─────────────────────────────────────────────────────────────
   app:
     build:
       context: .
@@ -54,7 +52,6 @@ services:
       logging: "promtail"
       app: "box-dispatch"
 
-  # ── PostgreSQL ───────────────────────────────────────────────────────────────
   postgres:
     image: postgres:16-alpine
     container_name: box-dispatch-postgres
@@ -76,7 +73,6 @@ services:
       timeout: 5s
       retries: 5
 
-  # ── Redis ────────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
     container_name: box-dispatch-redis
@@ -93,8 +89,6 @@ services:
       interval: 10s
       timeout: 3s
       retries: 5
-
-  # ── Prometheus ───────────────────────────────────────────────────────────────
   prometheus:
     image: prom/prometheus:v2.51.2
     container_name: box-dispatch-prometheus
@@ -117,7 +111,6 @@ services:
     depends_on:
       - app
 
-  # ── Grafana ──────────────────────────────────────────────────────────────────
   grafana:
     image: grafana/grafana:10.4.2
     container_name: box-dispatch-grafana
@@ -134,9 +127,7 @@ services:
       GF_ANALYTICS_CHECK_FOR_UPDATES: "false"
       GF_LOG_LEVEL: warn
       GF_FEATURE_TOGGLES_ENABLE: publicDashboards
-      # Prometheus data source
       PROMETHEUS_URL: http://prometheus:9090
-      # Loki data source
       LOKI_URL: http://loki:3100
     volumes:
       - grafana-data:/var/lib/grafana
@@ -148,7 +139,6 @@ services:
       - prometheus
       - loki
 
-  # ── Loki (log aggregation) ───────────────────────────────────────────────────
   loki:
     image: grafana/loki:2.9.7
     container_name: box-dispatch-loki
@@ -162,7 +152,6 @@ services:
     networks:
       - box-net
 
-  # ── Promtail (log shipper: Docker → Loki) ───────────────────────────────────
   promtail:
     image: grafana/promtail:2.9.7
     container_name: box-dispatch-promtail
@@ -192,7 +181,6 @@ services:
       postgres:
         condition: service_healthy
 
-  # ── redis-exporter (Redis metrics → Prometheus) ──────────────────────────────
   redis-exporter:
     image: oliver006/redis_exporter:v1.60.0
     container_name: box-dispatch-redis-exporter
