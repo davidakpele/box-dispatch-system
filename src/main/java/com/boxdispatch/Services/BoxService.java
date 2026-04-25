@@ -74,7 +74,7 @@ public class BoxService implements IBoxService {
         if (idempotencyActive) idempotencyService.commit(key, response);
         return response;
     }
-
+    
     private LoadItemsResponse executeLoadItems(String txref, LoadItemsRequest request) {
         Box box = boxRepository.findByTxrefWithItems(txref)
                 .orElseThrow(() -> ResourceNotFoundException.box(txref));
@@ -82,7 +82,7 @@ public class BoxService implements IBoxService {
         if (box.getBatteryCapacity() < MIN_BATTERY_FOR_LOADING)
             throw BusinessRuleViolationException.lowBattery(box.getBatteryCapacity());
 
-        if (!box.getState().isLoadable())
+        if (!box.getState().canTransitionTo(BoxState.LOADING))
             throw BusinessRuleViolationException.invalidStateTransition(box.getState(), BoxState.LOADING);
 
         List<String> requestCodes = request.getItems().stream().map(ItemRequest::getCode).toList();

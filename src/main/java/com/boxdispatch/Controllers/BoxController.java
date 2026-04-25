@@ -51,7 +51,7 @@ public class BoxController {
      * Loads items into a box.
      */
     @PostMapping("/{txref}/load")
-    @PreAuthorize("hasAnyRole('USER','ADMIN') and @security.isOwnerOrAdmin(#userId)")
+    @PreAuthorize("hasAnyRole('USER','ADMIN')")
     public ResponseEntity<BoxApiResponse<LoadItemsResponse>> loadItems(
             @PathVariable String txref,
             @Valid @RequestBody LoadItemsRequest request) {
@@ -67,7 +67,7 @@ public class BoxController {
      * Returns items currently loaded in the box.
      */
     @GetMapping("/{txref}/items")
-    @PreAuthorize("hasAnyRole('USER', 'ADMIN') and @security.isOwnerOrAdmin(#userId)")
+    @PreAuthorize("hasAnyRole('USER', 'ADMIN')") 
     public ResponseEntity<BoxApiResponse<List<ItemResponse>>> getLoadedItems(
             @PathVariable String txref) {
         List<ItemResponse> items = boxService.getLoadedItems(txref);
@@ -80,7 +80,7 @@ public class BoxController {
      * Returns all boxes available for loading.
      */
     @GetMapping("/available")
-    @PreAuthorize("hasAnyRole('USER','ADMIN') and @security.isOwnerOrAdmin(#userId)")
+    @PreAuthorize("hasAnyRole('USER','ADMIN')")
     public ResponseEntity<BoxApiResponse<List<BoxResponse>>> getAvailableBoxes() {
         List<BoxResponse> boxes = boxService.getAvailableBoxes();
         return ResponseEntity.ok(BoxApiResponse.success(boxes));
@@ -91,7 +91,7 @@ public class BoxController {
      * Returns battery status of a box.
      */
     @GetMapping("/{txref}/battery")
-    @PreAuthorize("hasAnyRole('USER','ADMIN') and @security.isOwnerOrAdmin(#userId)")
+    @PreAuthorize("hasAnyRole('USER','ADMIN')")
     public ResponseEntity<BoxApiResponse<BatteryResponse>> getBattery(
             @PathVariable String txref) {
         BatteryResponse battery = boxService.getBatteryLevel(txref);
