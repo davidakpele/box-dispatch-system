@@ -97,6 +97,9 @@ public class SecurityConfiguration {
         http
             .cors(cors -> cors.configurationSource(corsConfigurationSource()))
             .csrf(AbstractHttpConfigurer::disable)
+            .csrf(csrf -> csrf
+                .ignoringRequestMatchers("/actuator/**")
+            )
             .headers(headers -> headers
                 .contentSecurityPolicy(csp -> csp
                     .policyDirectives(
@@ -128,30 +131,19 @@ public class SecurityConfiguration {
             .addFilterBefore(new InputValidationFilter(),     UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(new SecurityHeadersFilter(),     UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(rateLimitingFilter,              UsernamePasswordAuthenticationFilter.class)
-            // ↓ Runs before JWT filter — redirects browser page requests to /login
-            //   instead of returning 401 JSON
             .addFilterBefore(thymeleafAuthRedirectFilter,     UsernamePasswordAuthenticationFilter.class)
             .addFilterBefore(jwtAuthFilter,                   UsernamePasswordAuthenticationFilter.class)
 
             .authorizeHttpRequests(auth -> auth
-                // ── Auth API endpoints ─────────────────────────────────────
                 .requestMatchers("/api/auth/**", "/auth/**", "/error/**").permitAll()
-
-                // ── Thymeleaf page routes ──────────────────────────────────
-                // Spring Security permits these at the HTTP layer.
-                // Actual login enforcement is handled by ThymeleafAuthRedirectFilter
-                // above, which redirects to /login when no valid JWT is present.
                 .requestMatchers("/", "/login", "/register", "/dashboard").permitAll()
-
-                // ── Static assets & docs ───────────────────────────────────
+                .requestMatchers("/actuator/prometheus", "/actuator/health").permitAll()
                 .requestMatchers(
                     "/swagger-ui.html", "/swagger-ui/**",
                     "/v3/api-docs/**", "/swagger-resources/**", "/webjars/**",
                     "/uploads/images/**", "/static/**",
                     "/favicon.ico", "/css/**", "/js/**", "/images/**"
                 ).permitAll()
-
-                // ── Everything else (all /api/v1/** calls) requires JWT ────
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2
