@@ -7,7 +7,9 @@ import jakarta.servlet.FilterChain;
 import jakarta.servlet.ServletException;
 import jakarta.servlet.http.HttpServletRequest;
 import jakarta.servlet.http.HttpServletResponse;
+import org.springframework.core.annotation.Order;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.MediaType;
 import org.springframework.stereotype.Component;
 import org.springframework.web.filter.OncePerRequestFilter;
 import java.io.IOException;
@@ -16,15 +18,16 @@ import java.util.Map;
 import java.util.concurrent.ConcurrentHashMap;
 
 @Component
+@Order(2)
 public class RateLimitingFilter extends OncePerRequestFilter {
     
     private final Map<String, Bucket> buckets = new ConcurrentHashMap<>();
     
-    // Rate limits
-    private static final int LOGIN_RATE_LIMIT = 5; // 5 attempts per minute
-    private static final int LOGIN_BURST_LIMIT = 10; // Allow bursts up to 10
-    private static final int REGISTER_RATE_LIMIT = 3; // 3 registrations per hour
-    private static final int GENERAL_RATE_LIMIT = 100; // 100 requests per minute
+    private static final int LOGIN_RATE_LIMIT = 5; 
+    private static final int LOGIN_BURST_LIMIT = 10; 
+    private static final int REGISTER_RATE_LIMIT = 3;
+    private static final int GENERAL_RATE_LIMIT = 100;
+    
     
     private Bucket createLoginBucket() {
         return Bucket.builder()
@@ -75,6 +78,7 @@ public class RateLimitingFilter extends OncePerRequestFilter {
             filterChain.doFilter(request, response);
         } else {
             response.setStatus(HttpStatus.TOO_MANY_REQUESTS.value());
+            response.setContentType(MediaType.APPLICATION_JSON_VALUE);
             response.setContentType("application/json");
             response.setHeader("Retry-After", getRetryAfterTime(path));
             response.getWriter().write(getRateLimitExceededMessage(path));

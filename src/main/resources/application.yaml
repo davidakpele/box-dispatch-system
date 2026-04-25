@@ -1,33 +1,33 @@
 spring:
+  application:
+    name: box-dispatch-system
+
+  profiles:
+    active: postgres
+
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.rest.RepositoryRestMvcAutoConfiguration
+      - org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration
+
   mvc:
     contentnegotiation:
       favor-parameter: false
       favor-path-extension: false
-  application:
-    name: box-dispatch-system
-  autoconfigure:
-    exclude: 
-      - org.springframework.boot.autoconfigure.data.rest.RepositoryRestMvcAutoConfiguration
-      - org.springframework.boot.autoconfigure.security.oauth2.resource.servlet.OAuth2ResourceServerAutoConfiguration
-  error:
-    include-message: always
-    include-binding-errors: always
-    include-stacktrace: never
-    include-exception: false
-    whitelabel:
-      enabled: false
 
   web:
     resources:
       add-mappings: false
+
   main:
     allow-bean-definition-overriding: true
+
   security:
-      filter:
-        dispatcher-types: REQUEST,ERROR,ASYNC
+    filter:
+      dispatcher-types: REQUEST,ERROR,ASYNC
 
   datasource:
-    url: jdbc:postgresql://localhost:5432/pesco_db
+    url: jdbc:postgresql://localhost:5432/boxdispatch
     username: postgres
     password: root
     driver-class-name: org.postgresql.Driver
@@ -55,49 +55,79 @@ spring:
         connection:
           provider_disables_autocommit: true
 
+  data:
+    redis:
+      host: localhost
+      port: 6379
+      password:
+      timeout: 2000ms
+      lettuce:
+        pool:
+          max-active: 8
+          max-idle: 4
+          min-idle: 1
+
   devtools:
     restart:
       enabled: false
-      exclude: "static/**,public/**"
     livereload:
       enabled: false
 
   sql:
     init:
       mode: never
-jwt:
-  secret-key: 3hbXrhqhmvPD0bVq9Ce4hxTqALG701J7jRXyfKjqtzDPIlbdJ8YMIfZtHmPlC6Js9JVpELE2tj4KGP1VoCMA4Ya58WGF3Hs1
-  expiration-minutes: 1440
-  refresh-expiration-days: 7
-  issuer: "ePay"
-  audience: "Unified Dynamic Systems"
-  clock-skew-seconds: 30
-  algorithm: "HS256"
-  token-prefix: "Bearer"
-  authorization-header: "Authorization"
-  enable-token-blacklist: true
-  blacklist-cleanup-interval-minutes: 60
-  max-blacklist-size: 10000
-  cookie-name: "jwt-token"
-  http-only-cookie: true
-  secure-cookie: true
-  same-site-cookie: "Strict"
-  cors-allowed-origins: "http://localhost:3000,http://localhost:3001,http://localhost:8000"
-  enable-multi-factor-support: false
-  max-tokens-per-user: 5
-  log-token-issuance: false
-  enable-token-rotation: true
-  rotation-grace-period-minutes: 5
-  access-token:
-    expiration: 900000
-  refresh-token:
-    expiration: 604800000
+
+  error:
+    include-message: always
+    include-binding-errors: always
+    include-stacktrace: never
+    include-exception: false
+    whitelabel:
+      enabled: false
+
+server:
+  port: 8000
+  # servlet:
+  #   context-path: /api
+
+app:
+  idempotency:
+    ttl-hours: 24
+    lock-ttl-seconds: 30
+
+  jwt:
+    secret-key: 3hbXrhqhmvPD0bVq9Ce4hxTqALG701J7jRXyfKjqtzDPIlbdJ8YMIfZtHmPlC6Js9JVpELE2tj4KGP1VoCMA4Ya58WGF3Hs1
+    expiration-minutes: 1440
+    refresh-expiration-days: 7
+    issuer: UDS
+    audience: Authorized UDS USERS
+    clock-skew-seconds: 30
+    algorithm: HS256
+    token-prefix: Bearer
+    authorization-header: Authorization
+    enable-token-blacklist: true
+    blacklist-cleanup-interval-minutes: 60
+    max-blacklist-size: 10000
+    cookie-name: jwt-token
+    http-only-cookie: true
+    secure-cookie: true
+    same-site-cookie: Strict
+    cors-allowed-origins: "http://localhost:3000,http://localhost:3001,http://localhost:8000"
+    enable-multi-factor-support: false
+    max-tokens-per-user: 5
+    log-token-issuance: false
+    enable-token-rotation: true
+    rotation-grace-period-minutes: 5
+    access-token:
+      expiration: 900000
+    refresh-token:
+      expiration: 604800000
 
 management:
   endpoints:
     web:
       exposure:
-        include: health, info, metrics, prometheus, loggers, env
+        include: health,info,metrics,prometheus,loggers,env
   endpoint:
     health:
       show-details: when-authorized
@@ -121,18 +151,14 @@ springdoc:
   show-actuator: false
   packages-to-scan: com.boxdispatch
 
-datasource:
-  micrometer:
-    includes: all
-
 logging:
   level:
     root: INFO
-    com.example.admin_api_service: DEBUG
-    org.springframework.web: INFO 
-    org.springframework.web.servlet.mvc.method.annotation: WARN 
-    org.springframework.security: INFO 
-    org.springframework.security.web.FilterChainProxy: DEBUG 
+    com.boxdispatch: DEBUG
+    org.springframework.web: INFO
+    org.springframework.web.servlet.mvc.method.annotation: WARN
+    org.springframework.security: INFO
+    org.springframework.security.web.FilterChainProxy: DEBUG
     org.hibernate.SQL: DEBUG
     org.hibernate.type.descriptor.sql.BasicBinder: TRACE
   pattern:

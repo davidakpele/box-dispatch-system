@@ -22,7 +22,9 @@ import org.springframework.security.web.header.writers.ReferrerPolicyHeaderWrite
 import org.springframework.web.cors.CorsConfiguration;
 import org.springframework.web.cors.CorsConfigurationSource;
 import org.springframework.web.cors.UrlBasedCorsConfigurationSource;
+
 import com.boxdispatch.Components.JwtProperties;
+import com.boxdispatch.Components.ThymeleafAuthRedirectFilter;
 import com.boxdispatch.Security.BotDetectionFilter;
 import com.boxdispatch.Security.CustomAuthenticationEntryPoint;
 import com.boxdispatch.Security.FirewallExceptionFilter;
@@ -41,65 +43,54 @@ import java.util.Arrays;
 @EnableMethodSecurity
 public class SecurityConfiguration {
 
-    private final JwtAuthenticationFilter jwtAuthFilter;
-    private final AuthenticationProvider authenticationProvider;
-    private final JwtProperties jwtProperties;
+    private final JwtAuthenticationFilter        jwtAuthFilter;
+    private final AuthenticationProvider         authenticationProvider;
+    private final JwtProperties                  jwtProperties;
     private final CustomAuthenticationEntryPoint authenticationEntryPoint;
-    private final RateLimitingFilter rateLimitingFilter;
-    private final BotDetectionFilter botDetectionFilter;
+    private final RateLimitingFilter             rateLimitingFilter;
+    private final BotDetectionFilter             botDetectionFilter;
+    private final ThymeleafAuthRedirectFilter    thymeleafAuthRedirectFilter; // NEW
 
-    public SecurityConfiguration(JwtAuthenticationFilter jwtAuthFilter, AuthenticationProvider authenticationProvider, JwtProperties jwtProperties, CustomAuthenticationEntryPoint authenticationEntryPoint, RateLimitingFilter rateLimitingFilter, BotDetectionFilter botDetectionFilter) {
-        this.jwtAuthFilter = jwtAuthFilter;
-        this.authenticationProvider = authenticationProvider;
-        this.jwtProperties = jwtProperties;
-        this.authenticationEntryPoint = authenticationEntryPoint;
-        this.rateLimitingFilter = rateLimitingFilter;
-        this.botDetectionFilter = botDetectionFilter;
+    public SecurityConfiguration(JwtAuthenticationFilter jwtAuthFilter,
+                                  AuthenticationProvider authenticationProvider,
+                                  JwtProperties jwtProperties,
+                                  CustomAuthenticationEntryPoint authenticationEntryPoint,
+                                  RateLimitingFilter rateLimitingFilter,
+                                  BotDetectionFilter botDetectionFilter,
+                                  ThymeleafAuthRedirectFilter thymeleafAuthRedirectFilter) {
+        this.jwtAuthFilter                = jwtAuthFilter;
+        this.authenticationProvider       = authenticationProvider;
+        this.jwtProperties                = jwtProperties;
+        this.authenticationEntryPoint     = authenticationEntryPoint;
+        this.rateLimitingFilter           = rateLimitingFilter;
+        this.botDetectionFilter           = botDetectionFilter;
+        this.thymeleafAuthRedirectFilter  = thymeleafAuthRedirectFilter;
     }
-    
-    
+
     @Bean
     @Primary
     public CorsConfigurationSource corsConfigurationSource() {
         CorsConfiguration configuration = new CorsConfiguration();
-        
         configuration.setAllowCredentials(true);
         configuration.setAllowedOriginPatterns(Arrays.asList("*"));
-        
         configuration.setAllowedMethods(Arrays.asList(
-            "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"
+                "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS"
         ));
-        
         configuration.setAllowedHeaders(Arrays.asList(
-            "Authorization",
-            "Content-Type",
-            "X-Requested-With",
-            "Accept",
-            "Origin",
-            "X-Request-ID",
-            "X-API-Version",
-            "Cache-Control",
-            "X-Forwarded-For",
-            "X-Forwarded-Proto"
+                "Authorization", "Content-Type", "X-Requested-With", "Accept",
+                "Origin", "X-Request-ID", "X-API-Version", "Cache-Control",
+                "X-Forwarded-For", "X-Forwarded-Proto"
         ));
-        
         configuration.setExposedHeaders(Arrays.asList(
-            "Authorization",
-            "Content-Type",
-            "X-Request-ID",
-            "X-API-Version",
-            "X-Rate-Limit-Limit",
-            "X-Rate-Limit-Remaining",
-            "X-Rate-Limit-Reset"
+                "Authorization", "Content-Type", "X-Request-ID", "X-API-Version",
+                "X-Rate-Limit-Limit", "X-Rate-Limit-Remaining", "X-Rate-Limit-Reset"
         ));
-        
         configuration.setMaxAge(3600L);
-
         UrlBasedCorsConfigurationSource source = new UrlBasedCorsConfigurationSource();
         source.registerCorsConfiguration("/**", configuration);
         return source;
     }
-    
+
     @SuppressWarnings("removal")
     @Bean
     public SecurityFilterChain filterChain(HttpSecurity http) throws Exception {
@@ -108,13 +99,17 @@ public class SecurityConfiguration {
             .csrf(AbstractHttpConfigurer::disable)
             .headers(headers -> headers
                 .contentSecurityPolicy(csp -> csp
-                    .policyDirectives("default-src 'self'; " +
-                                    "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
-                                    "style-src 'self' 'unsafe-inline'; " +
-                                    "img-src 'self' data: https:; " +
-                                    "font-src 'self' data:; " +
-                                    "connect-src 'self'; " +
-                                    "frame-ancestors 'none'")
+                    .policyDirectives(
+                        "default-src 'self'; " +
+                        "script-src 'self' 'unsafe-inline' 'unsafe-eval'; " +
+                        // Allow Google Fonts stylesheets
+                        "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; " +
+                        "img-src 'self' data: https:; " +
+                        // Allow Google Fonts files
+                        "font-src 'self' data: https://fonts.gstatic.com; " +
+                        "connect-src 'self'; " +
+                        "frame-ancestors 'none'"
+                    )
                 )
                 .frameOptions(frame -> frame.deny())
                 .xssProtection(xss -> xss
@@ -128,36 +123,35 @@ public class SecurityConfiguration {
                     .policy("geolocation=(self), microphone=(), camera=(), payment=()")
                 )
             )
-            .addFilterBefore(
-                new FirewallExceptionFilter(),
-                UsernamePasswordAuthenticationFilter.class
-            )
-            .addFilterBefore(
-                botDetectionFilter,
-                UsernamePasswordAuthenticationFilter.class
-            )
-            .addFilterBefore(
-                new InputValidationFilter(),
-                UsernamePasswordAuthenticationFilter.class
-            )
-            .addFilterBefore(
-                new SecurityHeadersFilter(),
-                UsernamePasswordAuthenticationFilter.class
-            )
-            
-            .addFilterBefore(rateLimitingFilter, UsernamePasswordAuthenticationFilter.class)
-            .addFilterBefore(jwtAuthFilter, UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(new FirewallExceptionFilter(),   UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(botDetectionFilter,              UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(new InputValidationFilter(),     UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(new SecurityHeadersFilter(),     UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(rateLimitingFilter,              UsernamePasswordAuthenticationFilter.class)
+            // ↓ Runs before JWT filter — redirects browser page requests to /login
+            //   instead of returning 401 JSON
+            .addFilterBefore(thymeleafAuthRedirectFilter,     UsernamePasswordAuthenticationFilter.class)
+            .addFilterBefore(jwtAuthFilter,                   UsernamePasswordAuthenticationFilter.class)
+
             .authorizeHttpRequests(auth -> auth
-                .requestMatchers("/auth/**", "/error/**").permitAll()
+                // ── Auth API endpoints ─────────────────────────────────────
+                .requestMatchers("/api/auth/**", "/auth/**", "/error/**").permitAll()
+
+                // ── Thymeleaf page routes ──────────────────────────────────
+                // Spring Security permits these at the HTTP layer.
+                // Actual login enforcement is handled by ThymeleafAuthRedirectFilter
+                // above, which redirects to /login when no valid JWT is present.
+                .requestMatchers("/", "/login", "/register", "/dashboard").permitAll()
+
+                // ── Static assets & docs ───────────────────────────────────
                 .requestMatchers(
-                    "/swagger-ui.html",
-                    "/swagger-ui/**",
-                    "/v3/api-docs/**",
-                    "/swagger-resources/**",
-                    "/webjars/**"
-                ).permitAll() 
-                .requestMatchers("/uploads/images/**").permitAll()
-                .requestMatchers("/static/**").permitAll()
+                    "/swagger-ui.html", "/swagger-ui/**",
+                    "/v3/api-docs/**", "/swagger-resources/**", "/webjars/**",
+                    "/uploads/images/**", "/static/**",
+                    "/favicon.ico", "/css/**", "/js/**", "/images/**"
+                ).permitAll()
+
+                // ── Everything else (all /api/v1/** calls) requires JWT ────
                 .anyRequest().authenticated()
             )
             .oauth2ResourceServer(oauth2 -> oauth2
@@ -175,7 +169,7 @@ public class SecurityConfiguration {
             .sessionManagement(session -> session
                 .sessionCreationPolicy(SessionCreationPolicy.STATELESS)
             );
-            
+
         return http.build();
     }
 
@@ -191,7 +185,6 @@ public class SecurityConfiguration {
         JwtGrantedAuthoritiesConverter grantedAuthoritiesConverter = new JwtGrantedAuthoritiesConverter();
         grantedAuthoritiesConverter.setAuthoritiesClaimName("roles");
         grantedAuthoritiesConverter.setAuthorityPrefix("ROLE_");
-
         JwtAuthenticationConverter converter = new JwtAuthenticationConverter();
         converter.setJwtGrantedAuthoritiesConverter(grantedAuthoritiesConverter);
         return converter;
@@ -200,8 +193,6 @@ public class SecurityConfiguration {
     @Bean
     public HttpFirewall httpFirewall() {
         StrictHttpFirewall firewall = new StrictHttpFirewall();
-        
-        // Block URL encoding and special characters
         firewall.setAllowSemicolon(false);
         firewall.setAllowUrlEncodedPercent(false);
         firewall.setAllowBackSlash(false);
@@ -209,32 +200,22 @@ public class SecurityConfiguration {
         firewall.setAllowUrlEncodedPeriod(false);
         firewall.setAllowUrlEncodedDoubleSlash(false);
         firewall.setAllowNull(false);
-        
-        // Block path traversal attempts
         firewall.setAllowUrlEncodedLineFeed(false);
         firewall.setAllowUrlEncodedCarriageReturn(false);
         firewall.setAllowUrlEncodedParagraphSeparator(false);
-        
-        // Restrict HTTP methods
         firewall.setAllowedHttpMethods(Arrays.asList(
-            "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"
+                "GET", "POST", "PUT", "DELETE", "PATCH", "OPTIONS", "HEAD"
         ));
-        
-        // Block suspicious patterns in URLs
         firewall.setAllowedHostnames(hostname -> {
             String lower = hostname.toLowerCase();
-            return !lower.contains("..") && 
-                   !lower.contains("%2e") && 
-                   !lower.contains("0x");
+            return !lower.contains("..") && !lower.contains("%2e") && !lower.contains("0x");
         });
-        
         return firewall;
     }
 
     @Bean
     public org.springframework.security.config.annotation.web.configuration.WebSecurityCustomizer webSecurityCustomizer(
-            HttpFirewall firewall
-    ) {
+            HttpFirewall firewall) {
         return web -> web.httpFirewall(firewall);
     }
 
