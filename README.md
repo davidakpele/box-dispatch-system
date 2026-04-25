@@ -1,6 +1,6 @@
 # Box Dispatch System
 
-A REST API service for managing dispatch boxes used to deliver small items to remote locations. Built with Java 17 and Spring Boot.
+A REST API service for managing dispatch boxes used to deliver small items to remote locations. Built with Java 17 and Spring Boot, with a Thymeleaf frontend for authentication and API interaction.
 
 ---
 
@@ -12,6 +12,7 @@ A REST API service for managing dispatch boxes used to deliver small items to re
 - [Configuration](#configuration)
 - [Build & Run](#build--run)
 - [Seeded Data](#seeded-data)
+- [Frontend](#frontend)
 - [API Endpoints](#api-endpoints)
 - [Authentication](#authentication)
 - [Additional Features](#additional-features)
@@ -51,6 +52,7 @@ IDLE → LOADING → LOADED → DELIVERING → DELIVERED → RETURNING → IDLE
 |---|---|
 | Language | Java 17 |
 | Framework | Spring Boot 3 |
+| Frontend | Thymeleaf |
 | Database | PostgreSQL |
 | Cache / Idempotency | Redis (Lettuce) |
 | Security | Spring Security + JWT (JJWT / Nimbus) |
@@ -150,6 +152,39 @@ The following boxes are pre-loaded into the database on first run (via `DataInit
 | Parcel-B | PARCEL_B_002 | 50g |
 
 Seeding is skipped automatically if data already exists.
+
+---
+
+## Frontend
+
+The application includes a Thymeleaf-based web interface accessible directly in the browser.
+
+### Pages
+
+| Route | Description |
+|---|---|
+| `http://localhost:8000/` | Landing page |
+| `http://localhost:8000/register` | Create a new account |
+| `http://localhost:8000/login` | Sign in with existing credentials |
+| `http://localhost:8000/dashboard` | Interactive API dashboard (requires login) |
+
+### Authentication Flow
+
+1. Navigate to `/register` and create an account
+2. Log in at `/login` — a JWT token is issued and stored in a secure HTTP-only cookie
+3. You are redirected to `/dashboard` automatically on success
+
+### Dashboard
+
+The dashboard provides a browser-based interface to interact with all box dispatch endpoints without needing Postman or curl. From the dashboard you can:
+
+- Create a new box
+- Load items into a box
+- View loaded items for a given box
+- Check available boxes for loading
+- Check the battery level of any box
+
+Unauthenticated access to `/dashboard` is redirected to `/login` automatically by `ThymeleafAuthRedirectFilter`.
 
 ---
 
@@ -364,21 +399,95 @@ Every request is logged with a unique `requestId`, method, path, IP address, res
 
 ## Testing
 
-Run all tests:
+The project has three layers of tests covering unit, controller, and integration scenarios.
+
+### Test Structure
+
+| File | Type | Description |
+|---|---|---|
+| `BoxServiceTest` | Unit (Mockito) | Service logic with all dependencies mocked |
+| `BoxControllerTest` | Controller (MockMvc) | HTTP layer, request validation, auth enforcement |
+| `BoxServiceIntegrationTest` | Integration (H2) | Full service + real DB with H2 in-memory |
+
+### Test Configuration
+
+Integration tests use a separate profile backed by H2. Place the following file at `src/test/resources/application-test.yml`:
+
+```yaml
+spring:
+  datasource:
+    url: jdbc:h2:mem:testdb;DB_CLOSE_DELAY=-1
+    driver-class-name: org.h2.Driver
+    username: sa
+    password:
+  jpa:
+    hibernate:
+      ddl-auto: create-drop
+    properties:
+      hibernate:
+        dialect: org.hibernate.dialect.H2Dialect
+  autoconfigure:
+    exclude:
+      - org.springframework.boot.autoconfigure.data.redis.RedisAutoConfiguration
+      - org.springframework.boot.autoconfigure.data.redis.RedisRepositoriesAutoConfiguration
+```
+
+### Run All Tests
 
 ```bash
 mvn test
 ```
 
-Run a specific test class:
+### Run a Specific Test Class
 
 ```bash
 mvn test -Dtest=BoxServiceTest
+mvn test -Dtest=BoxControllerTest
+mvn test -Dtest=BoxServiceIntegrationTest
 ```
 
-For manual testing, import the Swagger UI at `http://localhost:8000/docs` or use curl:
+### Test Coverage Summary
+
+**Unit Tests (`BoxServiceTest`) — 17 tests**
+
+| Method | Scenarios Covered |
+|---|---|
+| `createBox` | Success, duplicate txref, weight > 500g, exactly 500g |
+| `loadItems` | IDLE box, LOADING box, box not found, low battery, invalid state, duplicate codes in request, duplicate code in DB, weight exceeded, idempotent replay, lock released on failure |
+| `getLoadedItems` | Success, empty list, box not found |
+| `getAvailableBoxes` | Returns eligible boxes, empty list |
+| `getBatteryLevel` | Success, box not found |
+
+**Controller Tests (`BoxControllerTest`) — 18 tests**
+
+| Endpoint | Scenarios Covered |
+|---|---|
+| `POST /api/boxes` | 201 success, missing txref, txref too long, battery out of range, duplicate txref 409, unauthenticated 401 |
+| `POST /api/boxes/{txref}/load` | 201 success, 200 idempotent, 404 not found, 422 low battery, invalid item code, invalid item name, zero weight |
+| `GET /api/boxes/{txref}/items` | 200 with items, 200 empty list, 404 not found, 401 unauthenticated |
+| `GET /api/boxes/available` | 200 with boxes, 200 empty, 401 unauthenticated |
+| `GET /api/boxes/{txref}/battery` | 200 success, 404 not found, 401 unauthenticated |
+
+**Integration Tests (`BoxServiceIntegrationTest`) — 15 tests**
+
+| Area | Scenarios Covered |
+|---|---|
+| `createBox` | Persists to DB, rejects duplicate txref |
+| `loadItems` | Persists items, state transitions, remaining capacity, rejects loaded box, low battery, overweight, duplicate code across requests, unknown box |
+| `getLoadedItems` | Returns correct items, empty box, unknown box |
+| `getAvailableBoxes` | Filters by state and battery correctly, no eligible boxes |
+| `getBatteryLevel` | Correct value from DB, unknown box |
+
+### Manual Testing
+
+Use the dashboard at `http://localhost:8000/dashboard` after logging in, or use curl:
 
 ```bash
+# Register
+curl -X POST http://localhost:8000/api/auth/register \
+  -H "Content-Type: application/json" \
+  -d '{"email":"user@example.com","password":"password"}'
+
 # Login
 curl -X POST http://localhost:8000/api/auth/login \
   -H "Content-Type: application/json" \
@@ -393,4 +502,12 @@ curl -X POST http://localhost:8000/api/boxes/BOX-001/load \
   -H "Authorization: Bearer <token>" \
   -H "Content-Type: application/json" \
   -d '{"items":[{"name":"Parcel-X","weight":50.000,"code":"PARCEL_X_001"}]}'
+
+# Check loaded items
+curl http://localhost:8000/api/boxes/BOX-LOADED/items \
+  -H "Authorization: Bearer <token>"
+
+# Check battery level
+curl http://localhost:8000/api/boxes/BOX-001/battery \
+  -H "Authorization: Bearer <token>"
 ```
