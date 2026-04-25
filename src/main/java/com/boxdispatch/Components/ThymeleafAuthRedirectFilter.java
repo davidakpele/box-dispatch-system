@@ -57,7 +57,7 @@ public class ThymeleafAuthRedirectFilter extends OncePerRequestFilter {
 
         if (token == null || !isValidToken(token)) {
             log.debug("No valid JWT for page '{}' — redirecting to /login", path);
-            response.sendRedirect("/login");
+            response.sendRedirect("/auth/login");
             return;
         }
 

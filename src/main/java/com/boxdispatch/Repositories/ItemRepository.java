@@ -10,15 +10,13 @@ import java.util.Set;
  
 @Repository
 public interface ItemRepository extends JpaRepository<Item, Long> {
- 
-    List<Item> findByBoxTxref(String boxTxref);
- 
-    boolean existsByCode(String code);
- 
-    /**
-     * Check which of the provided codes already exist in the database.
-     */
+
+    @Query("SELECT i FROM Item i WHERE i.box.txref = :boxTxref")
+    List<Item> findByBoxTxref(@Param("boxTxref") String boxTxref);
+
+    @Query("SELECT COUNT(i) > 0 FROM Item i WHERE i.code = :code")
+    boolean existsByCode(@Param("code") String code);
+
     @Query("SELECT i.code FROM Item i WHERE i.code IN :codes")
     Set<String> findExistingCodes(@Param("codes") Set<String> codes);
 }
- 
