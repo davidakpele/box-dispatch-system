@@ -1,13 +1,7 @@
-# ─────────────────────────────────────────────────────────────────────────────
-#  Box Dispatch System — Multi-stage Dockerfile
-# ─────────────────────────────────────────────────────────────────────────────
-
-# ── Stage 1: Build ────────────────────────────────────────────────────────────
 FROM eclipse-temurin:21-jdk-alpine AS builder
 
 WORKDIR /build
 
-# Cache Maven dependencies separately from source
 COPY pom.xml .
 RUN --mount=type=cache,target=/root/.m2 \
     mvn dependency:go-offline -B 2>/dev/null || true
@@ -19,20 +13,17 @@ RUN --mount=type=cache,target=/root/.m2 \
     mvn clean package -DskipTests -B -q && \
     java -Djarmode=layertools -jar target/*.jar extract --destination target/extracted
 
-# ── Stage 2: Runtime ──────────────────────────────────────────────────────────
 FROM eclipse-temurin:21-jre-alpine AS runtime
 
 RUN addgroup -S appgroup && adduser -S appuser -G appgroup
 
 WORKDIR /app
 
-# Copy layered JAR for faster restarts
 COPY --from=builder --chown=appuser:appgroup /build/target/extracted/dependencies/ ./
 COPY --from=builder --chown=appuser:appgroup /build/target/extracted/spring-boot-loader/ ./
 COPY --from=builder --chown=appuser:appgroup /build/target/extracted/snapshot-dependencies/ ./
 COPY --from=builder --chown=appuser:appgroup /build/target/extracted/application/ ./
 
-# Install curl for healthcheck
 RUN apk add --no-cache curl
 
 USER appuser
